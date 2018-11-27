@@ -1,0 +1,32 @@
+##THIS PIPELINE COMPARES 1000G PHASE3 VARIANTS IN GRCh37 AND GRCh38
+
+grep -v '^#' /lustre/database/AlleleFrequency/1000G/phase3/ALL.wgs.phase3_shapeit2_mvncall_integrated_v5b.20130502.sites.vcf | cut -f 1-5,8 > 1000G_phase3_GRCh37.tsv
+grep -v '^#' /lustre/database/AlleleFrequency/1000G/phase3/1000GENOMES-phase_3_GRCh38.vcf | cut -f 1-5,8 > 1000G_phase3_GRCh38.tsv
+cat 1000G_phase3_GRCh37.tsv | awk '{ print $line"\t"7}' > 1000G_phase3_GRCh37_mod.tsv
+cat 1000G_phase3_GRCh38.tsv | awk '{ print $line"\t"8}' > 1000G_phase3_GRCh38_mod.tsv
+cat 1000G_phase3_GRCh37_mod.tsv 1000G_phase3_GRCh38_mod.tsv | sort -k3,3 -k7 > 1000G_phase3_comparison.tsv
+2qsub.pl -m python/3.5.1 "python3 ./1000G_phase3_rs_comparison.py"
+cat <(cat variants_only_GRCh37.tsv) <(tail 1000G_phase3_comparison.tsv | grep -w 94525650 ) > variants_only_GRCh37_corrected.tsv
+mv variants_only_GRCh37_corrected.tsv variants_only_GRCh37.ts
+rs=$( cut -f3 alternative_allele_to_correct.tsv | sort | uniq)
+for i in $rs; do grep -w $i variants_only_GRCh38.tsv ; done | wc
+for i in $rs; do grep -w $i variants_only_GRCh37.tsv ; done | awk '{ if ($7==7) print}' > alternative_allele_only_GRCh37.tsv
+for i in $rs; do grep -w $i corrected_variants.tsv ; done  | awk '{ if ($7==7) print}' > alternative_allele_corrected_variants.tsv
+for i in $rs; do grep -w $i uncorrected_variants.tsv ; done  | awk '{ if ($7==7) print}' > alternative_allele_uncorrected_variants.tsv
+rs=$( cat alternative_allele_only_GRCh37.tsv | cut -f3 )
+cat <( cat variants_only_GRCh37.tsv ) <(for i in $rs; do grep $i alternative_allele_to_correct.tsv ; done ) | sort -k3,3 > total_GRCh37_only_GRCh37.tsv
+rs=$( cat alternative_allele_corrected_variants.tsv | cut -f3 )
+cat <( cat corrected_variants.tsv | awk '{ if ($7==7) print}' ) <(for i in $rs; do grep $i alternative_allele_to_correct.tsv ; done ) | sort -k3,3 > total_GRCh37_corrected_variants.tsv
+rs=$( cat alternative_allele_uncorrected_variants.tsv | cut -f3 )
+cat <( cat uncorrected_variants.tsv | awk '{ if ($7==7) print}' ) <(for i in $rs; do grep $i alternative_allele_to_correct.tsv ; done ) | sort -k3,3 > total_GRCh37_uncorrected_variants.tsv
+2qsub.pl -m python/3.5.1 "python3 ./pyliftover.py"
+cat total_GRCh37_only_GRCh37_convertedCoordinates.tsv ../1000G_phase3_GRCh38_mod.tsv | sort -k1,1 -k2,2 -k3,3 -k7 > 1000G_phase3_NEWcomparison.tsv
+2qsub.pl -m python/3.5.1 "python3 ./1000G_phase3_coordinates_comparison.py"
+2qsub.pl -m python/3.5.1 "python3 ./to_correct_alternative_allele.py"
+cat <( cat variants_only_GRCh37_NEW.tsv | awk '{ if ($7==7) print}' ) <( cat alternative_allele_only_GRCh37_NEW.tsv ) | sort -k1,1 -k2,2 -k3,3 > total_GRCh37_only_GRCh37_NEW.tsv
+cat <( cat corrected_variants_NEW.tsv | awk '{ if ($7==7) print}' ) <( cat alternative_allele_corrected_variants_NEW.tsv ) | sort -k1,1 -k2,2 -k3,3 > total_GRCh37_corrected_variants_NEW.tsv
+cat <( cat uncorrected_variants_NEW.tsv | awk '{ if ($7==7) print}' ) <( cat alternative_allele_uncorrected_variants_NEW.tsv ) <( cat problematic_variants_in_GRCh37_reference.tsv ) | sort -k1,1 -k2,2 -k3,3 > total_GRCh37_uncorrected_variants_NEW.tsv
+cat <( cat total_GRCh37_corrected_variants.tsv ) <( cat total_GRCh37_corrected_variants_NEW.tsv ) > FINAL_CORRECTED.tsv
+cat <( cat total_GRCh37_uncorrected_variants.tsv ) <( cat total_GRCh37_uncorrected_variants_NEW.tsv ) > FINAL_UNCORRECTED.tsv
+cat <(cat FINAL_CORRECTED.tsv) <(cat FINAL_ONLY_GRCh37.tsv) <(cat total_GRCh37_only_GRCh37_notConvertible.tsv) > ../CORRECTED_IN_GRCH38.tsv
+2qsub.pl -m python/3.5.1 "python3 ./count_mair_in_corrected_and_uncorrected.py"
